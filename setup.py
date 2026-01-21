@@ -1,19 +1,12 @@
-import random
-import string
+import secrets
 import socket
 
 class generate:
     def system_id():
-        characters = string.ascii_uppercase + string.ascii_lowercase + string.digits
-        # Use random.choices() to generate a random string of the specified length
-        random_string = ''.join(random.choices(characters, k=12))
-        return random_string
+        return secrets.token_hex(6)
 
     def token():
-        characters = string.ascii_uppercase + string.ascii_lowercase + string.digits
-        # Use random.choices() to generate a random string of the specified length
-        random_string = ''.join(random.choices(characters, k=128))
-        return random_string
+        return secrets.token_urlsafe(96)
     
 class get:
     def ip():
@@ -27,4 +20,5 @@ class get:
         except Exception as e:
             return f"Error: {e}"
 
-print(get.ip())
+if __name__ == "__main__":
+    print(get.ip())

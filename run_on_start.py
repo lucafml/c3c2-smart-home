@@ -1,5 +1,4 @@
-import random
-import string
+import secrets
 import socket
 from datetime import datetime, timezone
 
@@ -8,9 +7,7 @@ from datetime import datetime, timezone
 class generate:
     def system_id():
         """Generate unique system ID (random + time)"""
-        characters = string.ascii_uppercase + string.ascii_lowercase + string.digits
-        # Use random.choices() to generate a random string of the specified length
-        random_string = ''.join(random.choices(characters, k=12))
+        random_string = secrets.token_hex(6)
         utc_time = datetime.now(timezone.utc)
         formatted_time = utc_time.strftime('%Y%m%d%H%M%S')
         hex_time = hex(int(formatted_time))
@@ -19,10 +16,7 @@ class generate:
 
     def token():
         """Random security token (128 characters)"""
-        characters = string.ascii_uppercase + string.ascii_lowercase + string.digits
-        # Use random.choices() to generate a random string of the specified length
-        random_string = ''.join(random.choices(characters, k=128))
-        return random_string
+        return secrets.token_urlsafe(96)
     
 class get:
     def ip():
