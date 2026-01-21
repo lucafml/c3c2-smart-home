@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, request, url_for, render_template_string, flash, abort
+from flask import Flask, render_template, redirect, request, url_for, render_template_string, flash, abort, jsonify
 import led as LEDC
 import file_access as FA
 import requests
@@ -6,6 +6,7 @@ import json
 import urllib.parse
 import configparser
 import run_on_start as setup2
+import secrets
 from db import DBWrapper
 from buttons.press_button import PressButton
 from buttons.switch_button import SwitchButton
@@ -21,6 +22,18 @@ app = Flask(__name__)
 
 config = configparser.ConfigParser()
 config.read('.conf')
+
+REQUEST_TIMEOUT = 5
+
+def parse_bool(raw_value, default=False):
+    if raw_value is None:
+        return default
+    normalized = str(raw_value).strip().strip('"').lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
 
 if config['SYSTEM']['secret_key'].strip('"') != " ":
     app.secret_key = config['SYSTEM']['secret_key'].strip('"')  # Needed for flashing messages
@@ -38,7 +51,7 @@ else:
 global api_active
 global api_token
 global api_list
-api_active = bool(config['DEFAULT']['api_active'].strip('"'))
+api_active = parse_bool(config['DEFAULT'].get('api_active', '"false"'))
 
 api_config = configparser.ConfigParser()
 api_config.read('api.conf')
@@ -79,11 +92,14 @@ def switch(pin):
 def call_api_info():
     """Init: fetch system IDs of linked APIs"""
     for api in api_list:
-        print()
         url = api['url'] + f'/api/info?code='+ api['token']
-        response = requests.get(url)
-        response = json.loads(response.text)[0]
-        api['system_id'] = str(response['system_id'])
+        try:
+            response = requests.get(url, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            response = response.json()[0]
+            api['system_id'] = str(response['system_id'])
+        except (requests.RequestException, ValueError, KeyError):
+            app.logger.warning("Failed to load API info from %s", api["url"])
 
 def get_api(api_id):
     for api in api_list:
@@ -239,28 +255,33 @@ def error():
 
 def call_all_apis(url_part):
     """Query all connected APIs (GET)"""
-    if api_active == True:
+    if api_active is True:
         full_response = []
         for api in api_list:
             try:
-                url = api['url'] + f'/api/get/{url_part}?code='+ api['token']  
-                response = requests.get(url)
-                if str(response) == "<Response [401]>":
-                    flash( '"'+ api['url'] +'" Authorisation failed', 'error')
+                url = api['url'] + f'/api/get/{url_part}?code='+ api['token']
+                response = requests.get(url, timeout=REQUEST_TIMEOUT)
+                if response.status_code == 401:
+                    flash(f'"{api["url"]}" Authorisation failed', 'error')
                 else:
-                    full_response += [json.loads(response.text)]
-            except:
-                flash( api['url'] +' is not available', 'error')
-                pass
-            
+                    full_response.append(response.json())
+            except (requests.RequestException, ValueError):
+                flash(api['url'] + ' is not available', 'error')
+
         return full_response
+    return []
     
 def call_api(url_part, use_api):
     """Single API request"""
-    if api_active == True:
-        url = use_api['url'] + f'/api/{url_part}?code='+use_api['token']  
-        response = json.loads(requests.get(url).text)[0]
-        return response
+    if api_active is True:
+        try:
+            url = use_api['url'] + f'/api/{url_part}?code='+use_api['token']
+            response = requests.get(url, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            return response.json()[0]
+        except (requests.RequestException, ValueError, KeyError):
+            return {"response": "error"}
+    return {"response": "error"}
 
 @app.route('/api/device/<pin>/', methods=['GET'])
 def call_api_device(pin):
@@ -277,7 +298,10 @@ def call_api_device_switch(pin):
     api_id = request.args.get('system_id')
     api_call = get_api(api_id)
     response = call_api(f"set/switch/{pin}", api_call)
-    return redirect(f'/api/device/'+str(response['pin'])+'?system_id='+str(response['system_id']))
+    if response.get("response") == "error":
+        flash("Remote switch failed.", "error")
+        return redirect(url_for('home'))
+    return redirect(url_for('call_api_device', pin=response['pin'], system_id=response['system_id']))
 
 @app.route('/api/unset/<pin>/', methods=['GET'])
 def call_unset_device(pin):
@@ -297,14 +321,13 @@ def call_unset_device(pin):
 
 @app.route('/api/info/')
 def info():
-    return '[{ "system_id": "'+system_id+'", "version": "0.0.1", "allow_connection": "'+str(api_active)+'"}]'
+    return jsonify([{"system_id": system_id, "version": "0.0.1", "allow_connection": str(api_active)}])
 
 def auth_check(code):
     """Token validation"""
-    if code == access_token:
-        return True
-    else:
+    if code is None:
         return False
+    return secrets.compare_digest(code, access_token)
 
 @app.route('/api/get/json/')
 def home_json():
@@ -314,11 +337,11 @@ def home_json():
         devices = FA.get_devices()
         for device in devices:
             try:
-                device['state'] = LEDC.state(device['pin'])
-            except:
+                device['state'] = LEDC.get.led(device['pin'])
+            except Exception:
                 device['state'] = False
             device['system_id'] = system_id
-        return devices
+        return jsonify(devices)
     else:
         abort(401)
 
@@ -329,9 +352,10 @@ def api_device(pin):
     if auth_check(code):
         pin = int(pin)
         if LEDC.get.led(pin):
-            return '[{ "devicename": "API", "pin": '+str(pin)+', "device_type": "output", "state": true, "system_id": "'+system_id+'" }]'
+            state = True
         else:
-            return '[{ "devicename": "API", "pin": '+str(pin)+', "device_type": "output", "state": false, "system_id": "'+system_id+'" }]'
+            state = False
+        return jsonify([{"devicename": "API", "pin": pin, "device_type": "output", "state": state, "system_id": system_id}])
     abort(401)
 
 @app.route('/api/set/switch/<pin>/')
@@ -342,10 +366,10 @@ def api_device_switch(pin):
         pin = int(pin)
         device = db.get_device(pin)
         if device is None:
-            return '[{ "state": false}]'
+            return jsonify([{"state": False}])
         LEDC.set.switch(pin)
-        return '[{ "pin": '+str(pin)+', "system_id": "'+system_id+'" }]'
-    return "[{ 'error': 'Authorisation failed' }]"
+        return jsonify([{"pin": pin, "system_id": system_id}])
+    return jsonify([{"error": "Authorisation failed"}]), 401
 
 @app.route('/api/set/unset/<pin>')
 def api_set_unset_device(pin):
@@ -353,14 +377,13 @@ def api_set_unset_device(pin):
     code = request.args.get('code')
     if auth_check(code):
         pin = int(pin)
-        call_url = request.args.get('url')
         try:
             LEDC.clear_led(pin)
-            FA.remove_device(pin)
-            return [{"response": "success"}]
-        except:
-            return [{"response": "error"}]
-    return "[{ 'error': 'Authorisation failed' }]"
+            FA.remove(pin)
+            return jsonify([{"response": "success"}])
+        except Exception:
+            return jsonify([{"response": "error"}]), 500
+    return jsonify([{"error": "Authorisation failed"}]), 401
 
 #--------------------------------------------------------------
 
@@ -368,6 +391,7 @@ call_api_info()
 
 def start():
     """Start Flask (externally callable)"""
-    app.run(debug=True, port=config['DEFAULT']['port'].strip('"'), host='0.0.0.0')
+    app.run(debug=False, port=config['DEFAULT']['port'].strip('"'), host='0.0.0.0')
 
-start()
+if __name__ == "__main__":
+    start()
