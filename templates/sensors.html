@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Sensors · Smart Home{% endblock %}
+
+{% block actions %}
+  <!-- Buttons oben rechts -->
+  <div class="actions">
+    <a class="btn" href="/">← Back</a>
+    <button class="btn btn--primary" type="button" onclick="refreshReading()">Refresh</button>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <!-- Live-Snapshot -->
+  <section class="section">
+    <div class="section__head">
+      <div>
+        <h2 class="section__title">BME680</h2>
+        <p class="section__sub">Temperature · humidity · pressure · gas</p>
+      </div>
+      <span class="muted" id="status"></span>
+    </div>
+
+    <div class="grid">
+      <div class="card" style="grid-column: span 3; cursor: default;">
+        <div class="card__kicker"><p class="card__name">Temperature</p><span class="pill">°C / °F</span></div>
+        <p class="card__meta"><strong id="temp_c">—</strong><br><span class="muted" id="temp_f">—</span></p>
+      </div>
+      <div class="card" style="grid-column: span 3; cursor: default;">
+        <div class="card__kicker"><p class="card__name">Humidity</p><span class="pill">%</span></div>
+        <p class="card__meta"><strong id="humidity">—</strong></p>
+      </div>
+      <div class="card" style="grid-column: span 3; cursor: default;">
+        <div class="card__kicker"><p class="card__name">Pressure</p><span class="pill">hPa</span></div>
+        <p class="card__meta"><strong id="pressure_hpa">—</strong></p>
+      </div>
+      <div class="card" style="grid-column: span 3; cursor: default;">
+        <div class="card__kicker"><p class="card__name">Gas</p><span class="pill">Ω</span></div>
+        <p class="card__meta"><strong id="gas_ohms">—</strong></p>
+      </div>
+
+      <div class="card" style="grid-column: span 12; cursor: default;" id="state">
+        <div class="card__kicker"><p class="card__name">Status</p><span class="pill" id="ts">—</span></div>
+        <p class="card__meta muted">Tip: this view uses <code>/api/sensors/bme680</code> so you can also poll it from other clients.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Historie aus der DB -->
+  <section class="section">
+    <div class="section__head">
+      <div>
+        <h2 class="section__title">History</h2>
+        <p class="section__sub">Latest readings stored in the local database</p>
+      </div>
+      <a class="btn" href="/stats">Open device history</a>
+    </div>
+
+    <div class="actions">
+      <button class="btn" type="button" onclick="openHistory()">Load last 60</button>
+    </div>
+
+    <div style="margin-top:12px; overflow:auto;">
+      <table class="table" id="history-table" hidden>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Temp (°C)</th>
+            <th>Humidity (%)</th>
+            <th>Pressure (hPa)</th>
+            <th>Gas (Ω)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="muted" id="history-empty">Click “Load last 60” to fetch stored readings.</p>
+    </div>
+  </section>
+
+  <script>
+    // Live-Read (per API)
+    async function refreshReading(){
+      const status = document.getElementById('status');
+      status.textContent = 'Refreshing…';
+      try{
+        const res = await fetch(`/api/sensors/bme680?code={{ api_code }}`);
+        const data = await res.json();
+        status.textContent = '';
+        const state = document.getElementById('state');
+        if(!data.available){
+          state.querySelector('.card__meta').innerHTML = `<span style="color: var(--bad)">Sensor unavailable</span><br><span class="muted">${data.error || ''}</span>`;
+          return;
+        }
+        // Werte eintragen
+        document.getElementById('temp_c').textContent = data.temperature_c.toFixed(2) + ' °C';
+        document.getElementById('temp_f').textContent = data.temperature_f.toFixed(2) + ' °F';
+        document.getElementById('humidity').textContent = data.humidity.toFixed(2) + ' %';
+        document.getElementById('pressure_hpa').textContent = data.pressure_hpa.toFixed(2) + ' hPa';
+        document.getElementById('gas_ohms').textContent = data.gas_ohms.toFixed(0) + ' Ω';
+        document.getElementById('ts').textContent = data.timestamp || 'live';
+        state.querySelector('.card__meta').textContent = data.available ? 'Sensor OK' : 'Sensor unavailable';
+      }catch(err){
+        status.textContent = '';
+        document.getElementById('state').querySelector('.card__meta').innerHTML =
+          `<span style="color: var(--bad)">Error</span><br><span class="muted">${err}</span>`;
+      }
+    }
+
+    async function openHistory(){
+      // Historie laden (letzte 60 Werte)
+      const empty = document.getElementById('history-empty');
+      const table = document.getElementById('history-table');
+      const tbody = table.querySelector('tbody');
+      empty.textContent = 'Loading…';
+      try{
+        const res = await fetch(`/api/sensors/bme680/history?limit=60&code={{ api_code }}`);
+        const rows = await res.json();
+        tbody.innerHTML = '';
+        if(!rows || rows.length === 0){
+          table.hidden = true;
+          empty.textContent = 'No stored readings yet.';
+          return;
+        }
+        for(const r of rows){
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${r.timestamp}</td><td>${Number(r.temperature_c).toFixed(2)}</td><td>${Number(r.humidity).toFixed(2)}</td><td>${Number(r.pressure_hpa).toFixed(2)}</td><td>${Number(r.gas_ohms).toFixed(0)}</td>`;
+          tbody.appendChild(tr);
+        }
+        empty.textContent = '';
+        table.hidden = false;
+      }catch(err){
+        table.hidden = true;
+        empty.textContent = 'Error loading history: ' + err;
+      }
+    }
+
+    // Load a first reading on open
+    window.addEventListener('load', refreshReading);
+  </script>
+{% endblock %}

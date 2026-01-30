@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Devices · Smart Home{% endblock %}
+
+{% block actions %}
+  <!-- Actions oben rechts: Filter + Buttons -->
+  <div class="actions">
+    <div class="search" title="Filter (name / pin / room)">
+      <span class="i" aria-hidden="true">🔎</span>
+      <input id="device-filter" type="text" placeholder="Filter devices… (e.g. kitchen, 17, lamp)" autocomplete="off">
+      <span class="kbd">Esc</span>
+    </div>
+    <button class="btn btn--primary" type="button" onclick="showModal('modal-add-device')">
+      <span class="i" aria-hidden="true">{{ icon('plus') }}</span>
+      Add device
+    </button>
+    <button class="btn" type="button" onclick="showModal('modal-add-button')">
+      <span aria-hidden="true">🔁</span>
+      Add button
+    </button>
+  </div>
+{% endblock %}
+
+{% block content %}
+
+  <!-- Sensor-Snapshot (optional, wenn ein Sensorwert vorhanden ist) -->
+  {% if latest_sensor %}
+    <section class="section">
+      <div class="section__head">
+        <div>
+          <h2 class="section__title">Environment</h2>
+          <p class="section__sub">Live BME680 snapshot · {{ latest_sensor.timestamp }}</p>
+        </div>
+        <a class="btn" href="/sensors">Open live view</a>
+      </div>
+
+      <div class="grid">
+        <div class="card" style="grid-column: span 3; cursor: default;">
+          <div class="card__kicker">
+            <p class="card__name">Temperature</p>
+            <span class="pill"><span class="dot dot--on"></span> live</span>
+          </div>
+          <p class="card__meta"><strong>{{ latest_sensor.temperature_c }}</strong> °C</p>
+        </div>
+        <div class="card" style="grid-column: span 3; cursor: default;">
+          <div class="card__kicker">
+            <p class="card__name">Humidity</p>
+            <span class="pill"><span class="dot dot--on"></span> live</span>
+          </div>
+          <p class="card__meta"><strong>{{ latest_sensor.humidity }}</strong> %</p>
+        </div>
+        <div class="card" style="grid-column: span 3; cursor: default;">
+          <div class="card__kicker">
+            <p class="card__name">Pressure</p>
+            <span class="pill"><span class="dot dot--on"></span> live</span>
+          </div>
+          <p class="card__meta"><strong>{{ latest_sensor.pressure_hpa }}</strong> hPa</p>
+        </div>
+        <div class="card" style="grid-column: span 3; cursor: default;">
+          <div class="card__kicker">
+            <p class="card__name">Gas</p>
+            <span class="pill"><span class="dot dot--on"></span> live</span>
+          </div>
+          <p class="card__meta"><strong>{{ latest_sensor.gas_ohms }}</strong> Ω</p>
+        </div>
+      </div>
+    </section>
+  {% endif %}
+
+  <!-- Button-Devices anzeigen (Input -> Output) -->
+  {% if all_button_devices %}
+    <section class="section">
+      <div class="section__head">
+        <div>
+          <h2 class="section__title">Buttons</h2>
+          <p class="section__sub">Input pins wired to output devices</p>
+        </div>
+      </div>
+
+      <div class="grid">
+        {% for button_device in all_button_devices %}
+          <div class="card" data-device-card data-search="{{ button_device.devicename }} {{ button_device.pin }} {{ button_device.secondary_pin }} button">
+            <div class="card__kicker">
+              <p class="card__name">{{ button_device.devicename }}</p>
+              <span class="pill">IN {{ button_device.pin }} → OUT {{ button_device.secondary_pin }}</span>
+            </div>
+            <p class="card__meta">Type: Button</p>
+            <div class="actions" style="margin-top:12px;">
+              <button class="btn btn--danger" type="button" onclick="confirmRemove('/unset/{{ button_device.pin }}/')">Remove</button>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  <!-- Geräte gruppiert nach Raum -->
+  {% for roomID, devices_in_room in devices_by_room.items() %}
+    {% if roomID != 1000 %}
+      <section class="section">
+        <div class="section__head">
+          <div>
+            <h2 class="section__title">Room {{ roomID }}</h2>
+            <p class="section__sub">{{ devices_in_room|length }} device(s)</p>
+          </div>
+          <a class="btn" href="/room/{{ roomID }}">Toggle room</a>
+        </div>
+
+        <div class="grid">
+          {% for device in devices_in_room %}
+            {% if (device.device_type_id is defined and device.device_type_id == 1) or (device.device_type is defined and device.device_type == 'output') %}
+              {% set is_remote = (device.system_id is defined) %}
+              {% set target = ('/api/device/' ~ device.pin ~ '?system_id=' ~ device.system_id) if is_remote else ('/device/' ~ device.pin) %}
+              <div class="card"
+                   onclick="window.location.href='{{ target }}'"
+                   data-device-card
+                   data-search="{{ device.devicename }} {{ device.pin }} room {{ roomID }}">
+                <div class="card__kicker">
+                  <p class="card__name">{{ device.devicename }}</p>
+                  <span class="pill"><span class="dot {% if device.state %}dot--on{% else %}dot--off{% endif %}"></span>{{ 'On' if device.state else 'Off' }}</span>
+                </div>
+                <p class="card__meta">Pin {{ device.pin }}</p>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+  {% endfor %}
+
+{% endblock %}
+
+{% block modals %}
+  <!-- Add device -->
+  <div class="modal" id="modal-add-device" hidden aria-hidden="true">
+    <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="add-device-title">
+      <div class="modal__head">
+        <h3 class="modal__title" id="add-device-title">Add device</h3>
+        <button class="modal__close" type="button" onclick="hideModal('modal-add-device')">Close</button>
+      </div>
+
+      <form class="form" action="/add-device" method="post">
+        <div class="field">
+          <label for="dev-name">Device name</label>
+          <input id="dev-name" type="text" name="deviceName" placeholder="e.g. Desk Lamp" required>
+        </div>
+        <div class="field">
+          <label for="dev-pin">GPIO pin</label>
+          <input id="dev-pin" type="number" name="pin" placeholder="e.g. 17" required>
+        </div>
+        <div class="field">
+          <label for="dev-room">Room</label>
+          <input id="dev-room" type="number" name="roomID" placeholder="e.g. 1" required>
+        </div>
+        <div class="field">
+          <label for="dev-type">Device type</label>
+          <select id="dev-type" name="deviceType" required>
+            <option value="output" selected>Output (Light)</option>
+            <option value="input" disabled>Input (not implemented)</option>
+          </select>
+        </div>
+
+        <div class="modal__actions">
+          <button class="btn" type="button" onclick="hideModal('modal-add-device')">Cancel</button>
+          <button class="btn btn--primary" type="submit">Add</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add button -->
+  <div class="modal" id="modal-add-button" hidden aria-hidden="true">
+    <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="add-button-title">
+      <div class="modal__head">
+        <h3 class="modal__title" id="add-button-title">Add button</h3>
+        <button class="modal__close" type="button" onclick="hideModal('modal-add-button')">Close</button>
+      </div>
+
+      <form class="form" action="/add-button" method="post">
+        <div class="field">
+          <label for="btn-name">Button name</label>
+          <input id="btn-name" type="text" name="deviceName" placeholder="e.g. Wall Switch" required>
+        </div>
+        <div class="field">
+          <label for="btn-in">Input pin</label>
+          <input id="btn-in" type="number" name="inputPin" placeholder="e.g. 24" required>
+        </div>
+        <div class="field">
+          <label for="btn-type">Button type</label>
+          <select id="btn-type" name="buttonType" required>
+            <option value="1" selected>Switch (toggle)</option>
+            <option value="2">Press (momentary)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="btn-out">Controls output device</label>
+          <select id="btn-out" name="outputPin" required>
+            <option value="" disabled selected>Select output device</option>
+            {% for device in all_devices %}
+              <option value="{{ device.pin }}">{{ device.devicename }} (PIN {{ device.pin }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="modal__actions">
+          <button class="btn" type="button" onclick="hideModal('modal-add-button')">Cancel</button>
+          <button class="btn btn--primary" type="submit">Add</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

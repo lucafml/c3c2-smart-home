@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Not found · Smart Home{% endblock %}
+
+{% block actions %}
+  <!-- Back to Home -->
+  <div class="actions">
+    <a class="btn" href="/">← Home</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <!-- Einfache Fehlerseite -->
+  <section class="section">
+    <div class="section__head">
+      <div>
+        <h2 class="section__title">Oops</h2>
+        <p class="section__sub">The page you requested does not exist (or was removed).</p>
+      </div>
+    </div>
+
+    <p class="muted">Try going back to the device overview.</p>
+    <div class="actions" style="margin-top:12px;">
+      <a class="btn btn--primary" href="/">Go to devices</a>
+      <a class="btn" href="/sensors">Sensors</a>
+      <a class="btn" href="/stats">Stats</a>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Stats · Smart Home{% endblock %}
+
+{% block actions %}
+  <!-- Navigation -->
+  <div class="actions">
+    <a class="btn" href="/">← Back</a>
+    <a class="btn" href="/sensors">Sensors</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <!-- Übersicht (Zusammenfassung) -->
+  <section class="section">
+    <div class="section__head">
+      <div>
+        <h2 class="section__title">Overview</h2>
+        <p class="section__sub">System activity and logs</p>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card" style="grid-column: span 4; cursor: default;">
+        <div class="card__kicker"><p class="card__name">State changes</p><span class="pill">history</span></div>
+        <p class="card__meta"><strong>{{ stats }}</strong> total</p>
+      </div>
+      <div class="card" style="grid-column: span 8; cursor: default;">
+        <div class="card__kicker"><p class="card__name">Sensor sparkline</p><span class="pill">last 60</span></div>
+        <canvas id="spark" height="70" style="width:100%;"></canvas>
+        <p class="muted" id="spark-hint" style="margin:8px 0 0;">Loading…</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Gerätelogs nach Minuten gruppiert -->
+  <section class="section">
+    <div class="section__head">
+      <div>
+        <h2 class="section__title">Device history</h2>
+        <p class="section__sub">Grouped by minute</p>
+      </div>
+    </div>
+
+    {% if history_by_minute %}
+      {% for minute, entries in history_by_minute.items() %}
+        <div style="margin-top:14px;">
+          <div class="actions" style="justify-content:space-between;">
+            <span class="pill">🕒 {{ minute }}</span>
+            <span class="muted">{{ entries|length }} update(s)</span>
+          </div>
+          <div style="margin-top:10px; overflow:auto;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Device</th>
+                  <th>Room</th>
+                  <th>State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in entries %}
+                  <tr>
+                    <td>{{ row.devicename }}</td>
+                    <td>{{ row.roomID }}</td>
+                    <td>
+                      <span class="pill">
+                        <span class="dot {% if row.state %}dot--on{% else %}dot--off{% endif %}"></span>
+                        {{ 'On' if row.state else 'Off' }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted">No history entries yet.</p>
+    {% endif %}
+  </section>
+
+  <script>
+    // Kleine Sparkline für Temperatur-Historie
+    async function loadSpark(){
+      const hint = document.getElementById('spark-hint');
+      const canvas = document.getElementById('spark');
+      const ctx = canvas.getContext('2d');
+
+      try{
+        const res = await fetch(`/api/sensors/bme680/history?limit=60&code={{ api_code }}`);
+        const rows = await res.json();
+        if(!rows || rows.length < 2){
+          hint.textContent = 'Not enough sensor history yet.';
+          return;
+        }
+        const series = rows.map(r => Number(r.temperature_c)).reverse();
+        const w = canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
+        const h = canvas.height = canvas.height * (window.devicePixelRatio || 1);
+        ctx.clearRect(0,0,w,h);
+
+        const min = Math.min(...series);
+        const max = Math.max(...series);
+        const pad = 10 * (window.devicePixelRatio || 1);
+        const dx = (w - pad*2) / (series.length - 1 || 1);
+
+        function y(v){
+          if(max === min) return h/2;
+          return (h - pad) - ((v - min) / (max - min)) * (h - pad*2);
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = 2 * (window.devicePixelRatio || 1);
+        ctx.beginPath();
+        series.forEach((v,i)=>{
+          const x = pad + dx*i;
+          const yy = y(v);
+          if(i===0) ctx.moveTo(x,yy); else ctx.lineTo(x,yy);
+        });
+        // no explicit color; default strokeStyle
+        ctx.stroke();
+
+        hint.textContent = `Temperature last 60 readings: min ${min.toFixed(1)}°C, max ${max.toFixed(1)}°C.`;
+      }catch(err){
+        hint.textContent = 'Could not load sparkline: ' + err;
+      }
+    }
+    // beim Laden einmal zeichnen + bei Resize erneut
+    window.addEventListener('load', loadSpark);
+    window.addEventListener('resize', () => setTimeout(loadSpark, 120));
+  </script>
+{% endblock %}

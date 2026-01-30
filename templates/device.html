@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ device.devicename if device.devicename is defined else 'Device' }} · Smart Home{% endblock %}
+
+{% block actions %}
+  <!-- Back-Button oben rechts -->
+  <div class="actions">
+    <a class="btn" href="/">← Back</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <!-- Device-Detailseite (lokal oder remote) -->
+  {% set is_remote = (device.system_id is defined) %}
+  {% set state = (device.state == 1) if (device.state is number) else (device.state) %}
+  <section class="section">
+    <div class="section__head">
+      <div>
+        <h2 class="section__title">{{ device.devicename if device.devicename is defined else 'Device' }}</h2>
+        <p class="section__sub">
+          Pin {{ device.pin }} ·
+          <span class="pill"><span class="dot {% if state %}dot--on{% else %}dot--off{% endif %}"></span>{{ 'On' if state else 'Off' }}</span>
+          {% if is_remote %} · Remote system {{ device.system_id }}{% endif %}
+        </p>
+      </div>
+
+      <div class="actions">
+        {% if is_remote %}
+          <a class="btn btn--primary" href="/api/switch/{{ device.pin }}/?system_id={{ device.system_id }}">Toggle</a>
+          <button class="btn btn--danger" type="button" onclick="confirmRemove('/api/unset/{{ device.pin }}/?system_id={{ device.system_id }}')">Remove</button>
+        {% else %}
+          <a class="btn btn--primary" href="/switch/{{ device.pin }}/">Toggle</a>
+          <button class="btn btn--danger" type="button" onclick="confirmRemove('/unset/{{ device.pin }}/')">Remove</button>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card" style="grid-column: span 6; cursor: default;">
+        <div class="card__kicker">
+          <p class="card__name">Details</p>
+          <span class="pill">GPIO {{ device.pin }}</span>
+        </div>
+        <p class="card__meta">
+          <span class="muted">Type:</span>
+          {% if device.device_type is defined %}{{ device.device_type }}{% elif device.device_type_id is defined %}{{ device.device_type_id }}{% else %}output{% endif %}
+          <br>
+          {% if device.roomID is defined %}<span class="muted">Room:</span> {{ device.roomID }}<br>{% endif %}
+          {% if device.secondary_pin is defined and device.secondary_pin %}<span class="muted">Secondary pin:</span> {{ device.secondary_pin }}<br>{% endif %}
+        </p>
+      </div>
+
+      <div class="card" style="grid-column: span 6; cursor: default;">
+        <div class="card__kicker">
+          <p class="card__name">Quick tips</p>
+          <span class="pill">UI</span>
+        </div>
+        <p class="card__meta">
+          • Click <strong>Toggle</strong> to switch the current state.<br>
+          • Use <strong>Remove</strong> to free the pin again.<br>
+          • On the home page you can filter devices by room/name/pin.
+        </p>
+      </div>
+    </div>
+  </section>
+{% endblock %}

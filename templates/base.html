@@ -1,0 +1,71 @@
+{% macro icon(name) -%}
+  {# kleine Icon-Sammlung als Inline-SVGs, damit wir keine Extra-Dateien brauchen #}
+  {% if name == 'home' %}
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 10v11h6v-7h6v7h6V10z"/></svg>
+  {% elif name == 'stats' %}
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16v2H2V3h2zm4-2H6V10h2zm5 0h-2V5h2zm5 0h-2v-7h2z"/></svg>
+  {% elif name == 'sensor' %}
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 14.76V5a2 2 0 0 0-4 0v9.76A4 4 0 1 0 14 14.76ZM12 22a6 6 0 0 1-4-10.53V5a4 4 0 0 1 8 0v6.47A6 6 0 0 1 12 22Z"/></svg>
+  {% elif name == 'plus' %}
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"/></svg>
+  {% else %}
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 15h-2v-2h2Zm0-4h-2V7h2Z"/></svg>
+  {% endif %}
+{%- endmacro %}
+
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Basis-Template: setzt Header, Styles und JS -->
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{% block title %}Smart Home{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__left">
+      <!-- Brand + Navigation -->
+      <a class="brand" href="/" title="Home">
+        <span class="brand__mark">🏠</span>
+        <span class="brand__text">Smart Home</span>
+      </a>
+      <nav class="nav">
+        <a class="nav__link" href="/"><span class="i">{{ icon('home') }}</span><span>Devices</span></a>
+        <a class="nav__link" href="/sensors"><span class="i">{{ icon('sensor') }}</span><span>Sensors</span></a>
+        <a class="nav__link" href="/stats"><span class="i">{{ icon('stats') }}</span><span>Stats</span></a>
+      </nav>
+    </div>
+
+    <div class="topbar__right">
+      <!-- Actions werden von den Unterseiten gesetzt -->
+      {% block actions %}{% endblock %}
+    </div>
+  </header>
+
+  <main class="page">
+    <!-- Flash-Messages als Toasts -->
+    {% with messages = get_flashed_messages(with_categories=True) %}
+      {% if messages %}
+        <div class="toast-stack" id="toast-stack">
+          {% for category, message in messages %}
+            <div class="toast toast--{{ category|e }}">
+              <div class="toast__dot"></div>
+              <div class="toast__msg">{{ message }}</div>
+              <button class="toast__close" type="button" aria-label="Close" onclick="dismissToast(this)">✕</button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <!-- Haupt-Content -->
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Backdrop + Modals (Content kommt aus den Unterseiten) -->
+  <div class="modal-backdrop" id="modal-backdrop" hidden></div>
+  {% block modals %}{% endblock %}
+</body>
+</html>
